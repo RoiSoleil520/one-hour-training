@@ -1,17 +1,34 @@
 'use strict';
 const STORAGE_KEY = 'one-hour-journal-v1';
+const PLAN_CHOICES_KEY = 'one-hour-plan-choices-v1';
 const $ = selector => document.querySelector(selector);
 const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 const dateFromKey = key => new Date(`${key}T12:00:00`);
 const todayKey = localDateKey(new Date());
 let selectedDate = dateFromKey(todayKey);
 let journal = {};
+let planChoices = {};
 let storageAvailable = true;
 try {
   const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
   if (isValidJournal(stored)) journal = stored;
+  const storedChoices = JSON.parse(localStorage.getItem(PLAN_CHOICES_KEY) || '{}');
+  if (isValidPlanChoices(storedChoices)) planChoices = storedChoices;
 } catch { storageAvailable = false; }
 
+function isValidSetList(sets, count) {
+  return Array.isArray(sets) && sets.length === count && sets.every(set =>
+    set && typeof set.done === 'boolean' && typeof set.weight === 'string' && set.weight.length <= 12 &&
+    (set.weight === '' || (Number.isFinite(Number(set.weight)) && Number(set.weight) >= 0 && Number(set.weight) <= 9999)) &&
+    typeof set.reps === 'string' && set.reps.length <= 30);
+}
+function isValidExerciseIds(ids, count) {
+  return Array.isArray(ids) && ids.length === count && ids.every(id => typeof id === 'string' && Object.hasOwnProperty.call(EXERCISE_BY_ID, id));
+}
+function isValidPlanChoices(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.entries(value).every(([day, ids]) => /^[0-4]$/.test(day) && isValidExerciseIds(ids, TRAINING_PLAN[Number(day)].exercises.length));
+}
 function isValidJournal(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   return Object.entries(value).every(([date, session]) => {
@@ -20,10 +37,16 @@ function isValidJournal(value) {
     if (typeof session.note !== 'string' || session.note.length > 1000 || !Array.isArray(session.exercises)) return false;
     const plan = TRAINING_PLAN[(dateFromKey(date).getDay()+6)%7];
     if (session.exercises.length !== plan.exercises.length) return false;
-    return session.exercises.every((sets, index) => Array.isArray(sets) && sets.length === plan.exercises[index][1] && sets.every(set =>
-      set && typeof set.done === 'boolean' && typeof set.weight === 'string' && set.weight.length <= 12 &&
-      (set.weight === '' || (Number.isFinite(Number(set.weight)) && Number(set.weight) >= 0 && Number(set.weight) <= 9999)) &&
-      typeof set.reps === 'string' && set.reps.length <= 30));
+    if (session.exerciseIds !== undefined && !isValidExerciseIds(session.exerciseIds, plan.exercises.length)) return false;
+    if (!session.exercises.every((sets, index) => isValidSetList(sets, plan.exercises[index][1]))) return false;
+    if (session.alternatives === undefined) return true;
+    if (!session.alternatives || typeof session.alternatives !== 'object' || Array.isArray(session.alternatives)) return false;
+    return Object.entries(session.alternatives).every(([key, sets]) => {
+      const match = /^(\d+):([a-z0-9-]+)$/.exec(key);
+      if (!match || !Object.hasOwnProperty.call(EXERCISE_BY_ID, match[2])) return false;
+      const slot = plan.exercises[Number(match[1])];
+      return slot && isValidSetList(sets, slot[1]);
+    });
   });
 }
 function getPlan(date = selectedDate) { return TRAINING_PLAN[(date.getDay()+6)%7]; }
@@ -32,9 +55,49 @@ function getMonday(date = selectedDate) {
   monday.setDate(monday.getDate() - (monday.getDay()+6)%7);
   return monday;
 }
+function emptySets(count) {
+  return Array.from({length:count}, () => ({weight:'', reps:'', done:false}));
+}
 function getSession(date = selectedDate) {
-  const key = localDateKey(date);
-  return journal[key] || {note:'',exercises:getPlan(date).exercises.map(([,count]) => Array.from({length:count}, () => ({weight:'',reps:'',done:false})))};
+  const plan = getPlan(date);
+  const stored = journal[localDateKey(date)];
+  // Legacy records keep the original exercise names, even after a weekly template changes.
+  if (stored) return {...stored, exerciseIds:stored.exerciseIds || originalExerciseIds(plan), alternatives:stored.alternatives || {}};
+  const dayIndex = (date.getDay()+6)%7;
+  return {
+    note:'',
+    exerciseIds:[...(planChoices[dayIndex] || originalExerciseIds(plan))],
+    alternatives:{},
+    exercises:plan.exercises.map(([,count]) => emptySets(count))
+  };
+}
+function workoutEntries(date = selectedDate) {
+  const plan = getPlan(date);
+  const session = getSession(date);
+  return plan.exercises.map(([name,count,target],index) => {
+    const exercise = EXERCISE_BY_ID[session.exerciseIds[index]];
+    return {exercise, count, target:exercise.name === name ? target : exercise.reps};
+  });
+}
+function replaceExercise(slot, exerciseId, remember) {
+  const session = getSession();
+  const oldId = session.exerciseIds[slot];
+  if (!EXERCISE_BY_ID[exerciseId] || !session.exercises[slot]) return;
+  if (oldId !== exerciseId) {
+    session.alternatives[`${slot}:${oldId}`] = session.exercises[slot];
+    session.exercises[slot] = session.alternatives[`${slot}:${exerciseId}`] || emptySets(getPlan().exercises[slot][1]);
+    session.exerciseIds[slot] = exerciseId;
+  }
+  if (remember) {
+    // Existing sessions keep their saved IDs; recurring choices only affect sessions not started yet.
+    const dayIndex = (selectedDate.getDay()+6)%7;
+    planChoices[dayIndex] = [...(planChoices[dayIndex] || originalExerciseIds(getPlan()))];
+    planChoices[dayIndex][slot] = exerciseId;
+  }
+  persistSession(session);
+  renderWeek(); renderWorkout();
+  const changed = document.querySelector(`.exercise[data-exercise="${slot}"]`);
+  if (changed) changed.open = true;
 }
 function sessionStats(date) {
   const sets = getSession(date).exercises.flat();
@@ -54,6 +117,7 @@ function persistSession(session) {
   journal[localDateKey(selectedDate)] = session;
   try {
     localStorage.setItem(STORAGE_KEY,JSON.stringify(journal));
+    localStorage.setItem(PLAN_CHOICES_KEY,JSON.stringify(planChoices));
     storageAvailable = true;
   } catch {
     storageAvailable = false;
@@ -86,19 +150,36 @@ function renderWorkout() {
   const session = getSession();
   $('#day-label').textContent = `${plan.english} / ${plan.day} · ${selectedDate.getMonth()+1} 月 ${selectedDate.getDate()} 日`;
   $('#workout-title').textContent = plan.title;
-  $('#muscles').textContent = plan.exercises.length ? `目标肌群：${plan.muscles}` : plan.muscles;
+  const customized = session.exerciseIds.some((id,index) => id !== originalExerciseIds(plan)[index]);
+  const currentGroups = [...new Set(workoutEntries().flatMap(({exercise})=>exercise.groups))].map(group=>EXERCISE_GROUPS[group]).join('、');
+  $('#muscles').textContent = plan.exercises.length ? (customized?`当前动作覆盖：${currentGroups}`:`目标肌群：${plan.muscles}`) : plan.muscles;
   $('.session-flow').hidden = !plan.exercises.length;
   $('#exercise-count').textContent = `${plan.exercises.length} 个动作`;
-  $('#day-note').innerHTML = `<strong>↗ ${plan.exercises.length?'今天的训练重点':'今天的恢复笔记'}</strong>${plan.note}`;
+  $('#day-note').innerHTML = `<strong>↗ ${plan.exercises.length?(customized?'原计划训练重点':'今天的训练重点'):'今天的恢复笔记'}</strong>${plan.note}`;
   $('#session-note').value = session.note;
   if (!plan.exercises.length) {
     $('#exercises').innerHTML = '<div class="rest-content"><span>⌁</span><h3>放慢一点，也是在前进。</h3><p>散个步，伸展一下，或者好好休息。<br>今天的任务，是让身体恢复能量。</p></div>';
     updateProgress(); return;
   }
   const firstIncomplete = session.exercises.findIndex(sets=>sets.some(set=>!set.done));
-  $('#exercises').innerHTML = plan.exercises.map(([name,count,target],exerciseIndex) => {
+  $('#exercises').innerHTML = workoutEntries().map(({exercise,count,target},exerciseIndex) => {
+    const name = exercise.name;
     const timed = target.includes('秒');
-    return `<details class="exercise" data-exercise="${exerciseIndex}" ${exerciseIndex===firstIncomplete?'open':''}><summary><span class="exercise-number">${String(exerciseIndex+1).padStart(2,'0')}</span><span class="exercise-name">${name}<small>${plan.english} · ${String(exerciseIndex+1).padStart(2,'0')}</small></span><span class="exercise-prescription">${count} × ${target}<small>${timed?'组 × 时长':'组 × 次数'}</small></span><span class="expand-icon" aria-hidden="true">+</span></summary><div class="set-table"><div class="set-header"><span>组</span><span>重量 / kg</span><span>${timed?'时长 / 秒':'实际次数'}</span><span>完成</span></div>${session.exercises[exerciseIndex].map((set,setIndex)=>`<div class="set-row"><span>${String(setIndex+1).padStart(2,'0')}</span><input type="number" min="0" max="9999" step="0.5" inputmode="decimal" data-field="weight" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="${name} 第${setIndex+1}组重量 kg" value="${escapeHTML(set.weight)}" placeholder="自重可留空"><input type="text" inputmode="numeric" maxlength="30" data-field="reps" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="${name} 第${setIndex+1}组${timed?'时长':'次数'}" value="${escapeHTML(set.reps)}" placeholder="${target}"><input class="set-check" type="checkbox" data-field="done" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="完成${name}第${setIndex+1}组" ${set.done?'checked':''}></div>`).join('')}</div></details>`;
+    const replaced = name !== plan.exercises[exerciseIndex][0];
+    return `<details class="exercise" data-exercise="${exerciseIndex}" ${exerciseIndex===firstIncomplete?'open':''}>
+      <summary><span class="exercise-number">${String(exerciseIndex+1).padStart(2,'0')}</span>
+        <span class="exercise-name">${name}<small>${replaced?'已替换 · ':''}${exercise.groups.map(group=>EXERCISE_GROUPS[group]).join(' / ')} · ${exercise.equipment}</small></span>
+        <span class="exercise-prescription">${count} × ${target}<small>${timed?'组 × 时长':'组 × 次数'}</small></span><span class="expand-icon" aria-hidden="true">+</span>
+      </summary>
+      <div class="exercise-learning">
+        <button class="exercise-preview" data-guide="${exercise.id}" data-slot="${exerciseIndex}" aria-label="查看${name}动作示意与要领">${ExerciseArt.thumbnail(exercise)}<span>示意图 ↗</span></button>
+        <div class="exercise-learning-copy"><span class="eyebrow">MOVE WITH INTENTION</span><p>${exercise.cues[0]}</p>
+          <div class="exercise-tools"><button data-guide="${exercise.id}" data-slot="${exerciseIndex}">动作要领 ↗</button><button data-replace="${exerciseIndex}">更换动作 ⇄</button></div>
+        </div>
+      </div>
+      <div class="set-table"><div class="set-header"><span>组</span><span>重量 / kg</span><span>${timed?'时长 / 秒':'实际次数'}</span><span>完成</span></div>
+      ${session.exercises[exerciseIndex].map((set,setIndex)=>`<div class="set-row"><span>${String(setIndex+1).padStart(2,'0')}</span><input type="number" min="0" max="9999" step="0.5" inputmode="decimal" data-field="weight" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="${name} 第${setIndex+1}组重量 kg" value="${escapeHTML(set.weight)}" placeholder="自重可留空"><input type="text" inputmode="numeric" maxlength="30" data-field="reps" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="${name} 第${setIndex+1}组${timed?'时长':'次数'}" value="${escapeHTML(set.reps)}" placeholder="${target}"><input class="set-check" type="checkbox" data-field="done" data-exercise="${exerciseIndex}" data-set="${setIndex}" aria-label="完成${name}第${setIndex+1}组" ${set.done?'checked':''}></div>`).join('')}</div>
+    </details>`;
   }).join('');
   updateProgress();
 }
@@ -152,7 +233,7 @@ $('#session-note').addEventListener('input',event=>{
 });
 $('#copy-plan').onclick = async()=>{
   const plan = getPlan();
-  const text = `${plan.day}｜${plan.title}\n${plan.exercises.length?'热身 8 分钟 · 力量 45 分钟 · 整理 7 分钟\n':''}${plan.exercises.map(([name,sets,reps],i)=>`${i+1}. ${name}：${sets} × ${reps}`).join('\n')}\n${plan.note}`;
+  const text = `${plan.day}｜${plan.title}\n${plan.exercises.length?'热身 8 分钟 · 力量 45 分钟 · 整理 7 分钟\n':''}${workoutEntries().map(({exercise,count,target},i)=>`${i+1}. ${exercise.name}：${count} × ${target}`).join('\n')}\n${plan.note}`;
   try {await navigator.clipboard.writeText(text);toast('当天计划已复制');}
   catch {toast('复制未成功，请允许浏览器访问剪贴板后重试。');}
 };
@@ -193,7 +274,9 @@ $('.timer-presets').addEventListener('click',event=>{
 document.addEventListener('visibilitychange',()=>{if(timerDeadline)tickTimer();});
 function renderHistory() {
   const dates = Object.keys(journal).filter(key=>{
-    const session=journal[key];return session.note||session.exercises.flat().some(set=>set.done||set.weight||set.reps);
+    const session=journal[key];
+    const allSets = [...session.exercises.flat(), ...Object.values(session.alternatives || {}).flat()];
+    return session.note || allSets.some(set=>set.done||set.weight||set.reps);
   }).sort().reverse();
   $('#history-list').innerHTML=dates.length?dates.map(key=>{
     const date=dateFromKey(key), stats=sessionStats(date);
@@ -207,7 +290,7 @@ $('#history-list').onclick=event=>{
   selectDate(dateFromKey(button.dataset.historyDate));$('#history-dialog').close();$('#workout').scrollIntoView({behavior:'smooth'});
 };
 $('#export-data').onclick=()=>{
-  const data=JSON.stringify({version:1,exportedAt:new Date().toISOString(),journal},null,2);
+  const data=JSON.stringify({version:2,exportedAt:new Date().toISOString(),journal,planChoices},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
   const anchor=document.createElement('a');anchor.href=url;anchor.download=`one-hour-records-${todayKey}.json`;anchor.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);toast('训练记录已导出');
@@ -217,13 +300,14 @@ $('#import-data').onchange=async event=>{
   try {
     if(file.size>5*1024*1024)throw new Error('备份文件不能超过 5 MB。');
     const data=JSON.parse(await file.text());
-    if(data.version!==1||!isValidJournal(data.journal))throw new Error('备份格式不正确，请选择一小时导出的 JSON 文件。');
+    if(![1,2].includes(data.version)||!isValidJournal(data.journal)||(data.version===2&&!isValidPlanChoices(data.planChoices)))throw new Error('备份格式不正确，请选择一小时导出的 JSON 文件。');
     // Preserve existing local sessions. Import only dates not already present.
     let added=0;
     for(const [date,session] of Object.entries(data.journal))if(!Object.hasOwnProperty.call(journal,date)){journal[date]=session;added++;}
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(journal));storageAvailable=true;}catch{storageAvailable=false;}
+    if(data.version===2) for(const [day,ids] of Object.entries(data.planChoices)) if(!Object.hasOwnProperty.call(planChoices,day)) planChoices[day]=ids;
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(journal));localStorage.setItem(PLAN_CHOICES_KEY,JSON.stringify(planChoices));storageAvailable=true;}catch{storageAvailable=false;}
     renderWeek();renderWorkout();renderHistory();updateStorageHint();
-    toast(`已导入 ${added} 天记录；同日期保留本机记录。${storageAvailable?'':'请导出备份，当前浏览器无法保存。'}`);
+    toast(`已导入 ${added} 天记录；同日期和已有每周设置保留本机内容。${storageAvailable?'':'请导出备份，当前浏览器无法保存。'}`);
   }catch(error){toast(error.message || '导入失败，文件不是有效的 JSON 备份。');}
   event.target.value='';
 };
