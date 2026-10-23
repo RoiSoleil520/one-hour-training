@@ -3,7 +3,7 @@ const DATASET_REPOSITORY = 'https://github.com/RoiSoleil520/exercises-dataset';
 const DATASET_MEDIA_BASE = `https://cdn.jsdelivr.net/gh/RoiSoleil520/exercises-dataset@${DATASET_REVISION}/`;
 const EXERCISE_GROUPS = {back:'背部',chest:'胸部',shoulders:'肩部','upper arms':'上臂','lower arms':'前臂','upper legs':'臀腿','lower legs':'小腿',waist:'腰腹',cardio:'有氧',neck:'颈部'};
 const EQUIPMENT_LABELS = {
-  assisted:'辅助器械',band:'弹力带',barbell:'杠铃','body weight':'自重','bosu ball':'波速球',cable:'绳索',dumbbell:'哑铃',
+  supplemental:'计划补充练习',assisted:'辅助器械',band:'弹力带',barbell:'杠铃','body weight':'自重','bosu ball':'波速球',cable:'绳索',dumbbell:'哑铃',
   'elliptical machine':'椭圆机','ez barbell':'曲杆杠铃',hammer:'锤子',kettlebell:'壶铃','leverage machine':'固定器械',
   'medicine ball':'药球','olympic barbell':'奥林匹克杠铃','resistance band':'阻力带',roller:'滚筒',rope:'绳子',
   'skierg machine':'滑雪机','sled machine':'滑轨器械','smith machine':'史密斯机','stability ball':'健身球',
@@ -33,27 +33,28 @@ const DATASET_CHINESE_NAMES = {
   '0979':'弹力带水平 Pallof 抗旋转推','0198':'绳索高位下拉','0577':'器械推胸','0739':'45° 腿举','0228':'站姿绳索髋后伸',
   '2133':'农夫行走','2135':'负重前平板支撑','0292':'单臂哑铃划船','0662':'俯卧撑','0314':'上斜哑铃卧推','0313':'哑铃锤式弯举',
   '0868':'绳索弯举','2188':'坐姿哑铃臂屈伸','1760':'哑铃高脚杯深蹲','0410':'哑铃单腿分腿蹲','3013':'低位徒手臀桥',
-  '3239':'跪姿平板交替触肩','0705':'侧桥支撑','0001':'3/4 仰卧起坐','0025':'杠铃卧推'
+  '1373':'扶支撑双脚提踵','0798':'固定单车','0017':'辅助引体向上','0493':'上斜俯卧撑','0189':'单臂绳索俯身划船','3239':'跪姿平板交替触肩','0705':'侧桥支撑','0001':'3/4 仰卧起坐','0025':'杠铃卧推'
 };
 const muscleLabel = value => MUSCLE_LABELS[value] || value;
-const EXERCISE_LIBRARY = DATASET_EXERCISES.map(record => ({
+const DATASET_LIBRARY = DATASET_EXERCISES.map(record => ({
   ...record,id:`ex-${record.id}`,datasetId:record.id,name:DATASET_CHINESE_NAMES[record.id] || record.name,
   englishName:record.name,groups:[record.category],equipmentKey:record.equipment,equipment:EQUIPMENT_LABELS[record.equipment] || record.equipment,
   muscles:muscleLabel(record.target),secondaryMuscles:record.secondary_muscles.map(muscleLabel).join('、'),setup:record.instruction_steps.zh[0],cues:record.instruction_steps.zh,
   source:`${DATASET_REPOSITORY}/blob/${DATASET_REVISION}/data/exercises.json`,imageUrl:DATASET_MEDIA_BASE+record.image,gifUrl:DATASET_MEDIA_BASE+record.gif_url
 }));
+const EXERCISE_LIBRARY = [...DATASET_LIBRARY,...SUPPLEMENTAL_EXERCISES];
 const EXERCISE_BY_ID = Object.fromEntries([
   ...LEGACY_EXERCISES.map(exercise => [exercise.id,{...exercise,legacy:true}]),...EXERCISE_LIBRARY.map(exercise => [exercise.id,exercise])
 ]);
 const EXERCISE_BY_NAME = Object.fromEntries(LEGACY_EXERCISES.map(exercise => [exercise.name,EXERCISE_BY_ID[`ex-${LEGACY_TO_DATASET[exercise.id]}`]]));
-function originalExerciseIds(plan) { return plan.exercises.map(([name])=>EXERCISE_BY_NAME[name].id); }
+function originalExerciseIds(plan) { return plan.exercises.map(([name,,,id])=>id || EXERCISE_BY_NAME[name].id); }
 function legacyExerciseIds(plan) { return plan.exercises.map(([name])=>LEGACY_EXERCISES.find(exercise=>exercise.name===name).id); }
 function exerciseGroupLabel(exercise) { return exercise.groups.map(group=>EXERCISE_GROUPS[group] || LEGACY_EXERCISE_GROUPS[group]).join(' / '); }
 function filterExercises({group='all',equipment='all',target='all',query=''}={}) {
   const words=query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return EXERCISE_LIBRARY.filter(exercise => (group==='all'||exercise.groups.includes(group)) &&
     (equipment==='all'||exercise.equipmentKey===equipment) && (target==='all'||exercise.target===target) &&
-    words.every(word=>`${exercise.datasetId} ${exercise.name} ${exercise.englishName} ${exercise.muscles} ${exercise.secondaryMuscles} ${exercise.equipment} ${exercise.equipmentKey} ${exerciseGroupLabel(exercise)} ${exercise.cues.join(' ')}`.toLowerCase().includes(word)));
+    words.every(word=>`${exercise.datasetId||''} ${exercise.name} ${exercise.englishName} ${exercise.muscles} ${exercise.secondaryMuscles} ${exercise.equipment} ${exercise.equipmentKey} ${exerciseGroupLabel(exercise)} ${exercise.cues.join(' ')}`.toLowerCase().includes(word)));
 }
 function exercisePage(exercises,page,size=48) {
   const pages=Math.max(1,Math.ceil(exercises.length/size));

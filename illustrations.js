@@ -183,10 +183,12 @@ const LegacyExerciseArt = (() => {
 const ExerciseArt = {
   thumbnail(exercise) {
     if (exercise.legacy) return LegacyExerciseArt.thumbnail(exercise);
+    if (exercise.supplemental) return SupplementalArt.thumbnail(exercise);
     return `<img class="dataset-thumbnail" src="${exercise.imageUrl}" width="180" height="180" loading="lazy" decoding="async" alt="${exercise.englishName}"><span class="media-attribution">© Gym visual — https://gymvisual.com/</span>`;
   },
   guide(exercise) {
     if (exercise.legacy) return LegacyExerciseArt.guide(exercise);
+    if (exercise.supplemental) return SupplementalArt.guide(exercise);
     return `<img class="dataset-animation" src="${exercise.gifUrl}" width="180" height="180" alt="${exercise.englishName} 动作动画"><a class="media-attribution" href="https://gymvisual.com/" target="_blank" rel="noopener">${exercise.attribution}</a>`;
   }
 };
