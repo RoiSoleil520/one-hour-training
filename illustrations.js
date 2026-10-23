@@ -113,8 +113,25 @@ const ExerciseArt = (() => {
         return figure([39,159],[[58,158],[111,158]],[[[62,154],end?[34,131]:[65,117],end?[18,106]:[67,80]],[[68,158],[77,116],[79,81]]],[[[111,158],[130,116],end?[188,154]:[170,117]],[[111,158],[123,112],[162,108]]],'core')+(end?arrow(173,124,189,144):'');
       }
       case 'pallof': {
-        const hand=end?[177,81]:[129,81];
-        return rod([[31,174],[31,66]])+cable([[31,80],hand])+figure([112,39],[[112,62],[112,109]],[[[119,68],end?[151,79]:[129,103],hand],[[109,72],end?[148,87]:[119,102],[hand[0]-2,hand[1]+6]]],standingLegs,'core')+(end?arrow(139,56,177,56):'');
+        // Top view makes the lateral resistance distinct from the forward hand movement.
+        const handY = end ? 151 : 123;
+        return `<g><text x="148" y="28" font-size="9" fill="#7b896d">俯视图</text>
+          <ellipse cx="79" cy="115" rx="6" ry="15" fill="${ink}"/>
+          <ellipse cx="141" cy="115" rx="6" ry="15" fill="${ink}"/>
+          <ellipse cx="110" cy="89" rx="25" ry="17" fill="${ink}"/>
+          <ellipse cx="110" cy="91" rx="18" ry="12" fill="${green}"/>
+          <circle cx="110" cy="78" r="12" fill="${skin}"/>
+          <path d="M99 77Q110 63 121 77" fill="${ink}"/>
+          <path d="M108 90L110 94L112 90" fill="${skin}"/>
+          ${line([[88,95],end?[96,125]:[88,119],[107,handY]],skin,7)}
+          ${line([[132,95],end?[124,125]:[132,119],[113,handY]],skin,7)}
+          ${rod([[25,93],[25,158]])}${cable([[25,handY],[110,handY]])}
+          <circle cx="110" cy="${handY}" r="4" fill="${ink}"/>
+          ${arrow(84,handY-11,42,handY-11)}
+          ${arrow(169,111,169,147)}
+          <text x="30" y="${handY+18}" font-size="9" fill="#72875a">侧面阻力</text>
+          <text x="155" y="163" font-size="9" fill="#72875a">面朝前</text>
+        </g>`;
       }
       case 'kickback': {
         return rod([[39,172],[39,39],[56,39]])+figure([93,49],[[103,69],[122,112]],[[[104,73],[68,82],[42,89]],[[109,78],[70,91],[43,96]]],[[[122,112],[118,143],[117,174]],[[122,112],end?[154,133]:[135,144],end?[181,153]:[136,173]]],'legs')+cable([[39,165],end?[181,153]:[136,173]])+(end?arrow(153,174,180,163):'');
