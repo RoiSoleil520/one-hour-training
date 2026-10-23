@@ -13,6 +13,7 @@ assert.equal(run('DATASET_LIBRARY.length'),1324);
 assert.equal(run('SUPPLEMENTAL_EXERCISES.length'),8);
 assert.equal(run('new Set(EXERCISE_LIBRARY.map(e=>e.id)).size'),1332);
 assert(run('TRAINING_PLAN.every(plan=>originalExerciseIds(plan).every(id=>EXERCISE_BY_ID[id]))'));
+assert(run(`filterExercises({target:'pectorals',query:'中立握'}).some(e=>e.id==='supp-floor-press')`));
 assert(run('TRAINING_PLAN.every(plan=>plan.exercises.every(tuple=>(tuple[4].alternatives||[]).every(id=>EXERCISE_BY_ID[id])))'));
 assert.deepEqual(Array.from(run('TRAINING_PLAN.slice(0,5).map(plan=>plan.exercises.reduce((sum,row)=>sum+row[1],0))')),[13,12,14,14,11]);
 assert(run('TRAINING_PLAN[2].kind==="control"&&TRAINING_PLAN[2].exercises[0][4].unit==="分钟"&&TRAINING_PLAN[2].exercises[7][4].unit==="秒"'));

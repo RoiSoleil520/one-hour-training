@@ -10,6 +10,7 @@ const EQUIPMENT_LABELS = {
   'stationary bike':'固定单车','stepmill machine':'台阶机',tire:'轮胎','trap bar':'六角杠铃','upper body ergometer':'上肢功率车',weighted:'负重','wheel roller':'健腹轮'
 };
 const MUSCLE_LABELS = {
+  'foot intrinsics':'足部内在肌','balance control':'平衡控制',
   abductors:'髋外展肌',abs:'腹肌',adductors:'髋内收肌',biceps:'肱二头肌',calves:'小腿肌群','cardiovascular system':'心肺系统',
   delts:'三角肌',forearms:'前臂肌群',glutes:'臀肌',hamstrings:'腘绳肌',lats:'背阔肌','levator scapulae':'肩胛提肌',
   pectorals:'胸肌',quads:'股四头肌','serratus anterior':'前锯肌',spine:'脊柱竖肌',traps:'斜方肌',triceps:'肱三头肌',
