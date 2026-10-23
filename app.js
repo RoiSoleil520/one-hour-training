@@ -62,11 +62,11 @@ function getSession(date = selectedDate) {
   const plan = getPlan(date);
   const stored = journal[localDateKey(date)];
   // Legacy records keep the original exercise names, even after a weekly template changes.
-  if (stored) return {...stored, exerciseIds:stored.exerciseIds || originalExerciseIds(plan), alternatives:stored.alternatives || {}};
+  if (stored) return {...stored, exerciseIds:stored.exerciseIds || legacyExerciseIds(plan), alternatives:stored.alternatives || {}};
   const dayIndex = (date.getDay()+6)%7;
   return {
     note:'',
-    exerciseIds:[...(planChoices[dayIndex] || originalExerciseIds(plan))],
+    exerciseIds:[...(planChoices[dayIndex] || originalExerciseIds(plan)).map(id => EXERCISE_BY_ID[id].legacy ? `ex-${LEGACY_TO_DATASET[id]}` : id)],
     alternatives:{},
     exercises:plan.exercises.map(([,count]) => emptySets(count))
   };
@@ -76,7 +76,7 @@ function workoutEntries(date = selectedDate) {
   const session = getSession(date);
   return plan.exercises.map(([name,count,target],index) => {
     const exercise = EXERCISE_BY_ID[session.exerciseIds[index]];
-    return {exercise, count, target:exercise.name === name ? target : exercise.reps};
+    return {exercise, count, target};
   });
 }
 function replaceExercise(slot, exerciseId, remember) {
@@ -151,7 +151,7 @@ function renderWorkout() {
   $('#day-label').textContent = `${plan.english} / ${plan.day} · ${selectedDate.getMonth()+1} 月 ${selectedDate.getDate()} 日`;
   $('#workout-title').textContent = plan.title;
   const customized = session.exerciseIds.some((id,index) => id !== originalExerciseIds(plan)[index]);
-  const currentGroups = [...new Set(workoutEntries().flatMap(({exercise})=>exercise.groups))].map(group=>EXERCISE_GROUPS[group]).join('、');
+  const currentGroups = [...new Set(workoutEntries().map(({exercise})=>exerciseGroupLabel(exercise)))].join('、');
   $('#muscles').textContent = plan.exercises.length ? (customized?`当前动作覆盖：${currentGroups}`:`目标肌群：${plan.muscles}`) : plan.muscles;
   $('.session-flow').hidden = !plan.exercises.length;
   $('#exercise-count').textContent = `${plan.exercises.length} 个动作`;
@@ -165,13 +165,13 @@ function renderWorkout() {
   $('#exercises').innerHTML = workoutEntries().map(({exercise,count,target},exerciseIndex) => {
     const name = exercise.name;
     const timed = target.includes('秒');
-    const replaced = name !== plan.exercises[exerciseIndex][0];
+    const replaced = exercise.id !== originalExerciseIds(plan)[exerciseIndex];
     return `<details class="exercise" data-exercise="${exerciseIndex}" ${exerciseIndex===firstIncomplete?'open':''}>
       <summary><span class="exercise-number">${String(exerciseIndex+1).padStart(2,'0')}</span>
-        <span class="exercise-name">${name}<small>${replaced?'已替换 · ':''}${exercise.groups.map(group=>EXERCISE_GROUPS[group]).join(' / ')} · ${exercise.equipment}</small></span>
+        <span class="exercise-name">${name}<small>${replaced?'已替换 · ':''}${exerciseGroupLabel(exercise)} · ${exercise.equipment}</small></span>
         <span class="exercise-prescription">${count} × ${target}<small>${timed?'组 × 时长':'组 × 次数'}</small></span><span class="expand-icon" aria-hidden="true">+</span>
       </summary>
-      <div class="exercise-learning">
+      ${exercise.legacy?'<p class="dataset-plan-note">旧版已保存动作 · 记录仍属于原动作，可从新动作库更换。</p>':`<p class="dataset-plan-note">原计划位置：${plan.exercises[exerciseIndex][0]} · 当前采用库中所示变式，目标沿用此位置的次数 / 时长。</p>`}<div class="exercise-learning">
         <button class="exercise-preview" data-guide="${exercise.id}" data-slot="${exerciseIndex}" aria-label="查看${name}动作示意与要领">${ExerciseArt.thumbnail(exercise)}<span>示意图 ↗</span></button>
         <div class="exercise-learning-copy"><span class="eyebrow">MOVE WITH INTENTION</span><p>${exercise.cues[0]}</p>
           <div class="exercise-tools"><button data-guide="${exercise.id}" data-slot="${exerciseIndex}">动作要领 ↗</button><button data-replace="${exerciseIndex}">更换动作 ⇄</button></div>

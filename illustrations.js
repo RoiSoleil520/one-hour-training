@@ -1,6 +1,6 @@
 // Original vector schematics: two key positions for each movement, rendered locally.
 // Coordinates use a 220 × 195 drawing space. These are position cues, not anatomical models.
-const ExerciseArt = (() => {
+const LegacyExerciseArt = (() => {
   const ink = '#34442e', skin = '#c8a787', green = '#79944f', equipment = '#aab59d';
   const line = (points, color = ink, width = 7) => `<polyline points="${points.map(point=>point.join(',')).join(' ')}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
   const rod = points => line(points,equipment,5);
@@ -178,3 +178,27 @@ const ExerciseArt = (() => {
   }
   return {thumbnail,guide};
 })();
+
+// Dataset images stay at their licensed 180 × 180 resolution.
+const ExerciseArt = {
+  thumbnail(exercise) {
+    if (exercise.legacy) return LegacyExerciseArt.thumbnail(exercise);
+    return `<img class="dataset-thumbnail" src="${exercise.imageUrl}" width="180" height="180" loading="lazy" decoding="async" alt="${exercise.englishName}"><span class="media-attribution">© Gym visual — https://gymvisual.com/</span>`;
+  },
+  guide(exercise) {
+    if (exercise.legacy) return LegacyExerciseArt.guide(exercise);
+    return `<img class="dataset-animation" src="${exercise.gifUrl}" width="180" height="180" alt="${exercise.englishName} 动作动画"><a class="media-attribution" href="https://gymvisual.com/" target="_blank" rel="noopener">${exercise.attribution}</a>`;
+  }
+};
+// A failed CDN request can retry the exact pinned file on GitHub. Keep an explicit link if both fail.
+document.addEventListener('error',event=>{
+  const image=event.target;
+  if (!(image instanceof HTMLImageElement) || !image.matches('.dataset-thumbnail,.dataset-animation')) return;
+  if (!image.dataset.retried) {
+    image.dataset.retried='true';
+    image.src=image.src.replace(DATASET_MEDIA_BASE,`https://raw.githubusercontent.com/RoiSoleil520/exercises-dataset/${DATASET_REVISION}/`);
+    return;
+  }
+  image.alt='图片暂时无法加载，请打开动作详情中的原图链接。';
+  image.classList.add('media-unavailable');
+},true);
